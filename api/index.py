@@ -17,7 +17,10 @@ TOKEN = os.environ.get('TOKEN')
 DETA_TOKEN = os.environ.get('DETA_TOKEN')
 app = FastAPI()
 deta = Deta(DETA_TOKEN)
+quiz_db = deta.Base("quiz")
 quiz_user = deta.Base("quiz_user")
+quiz_group = deta.Base("quiz_group")
+quiz_private = deta.Base("quiz_private")
 
 QUIZ_ENDED_MESSAGE = '''
 The quiz has ended, you can send /quiz_stats to get the statistics for the quiz :)
@@ -96,85 +99,6 @@ def get_quiz():
         logger.error(e)
 
 
-def quiz_init(update: Update, context: CallbackContext):
-    '''
-    This function will initialize the quiz params
-    '''
-    global EFFECTIVE_CHAT_ID
-    QUIZZES.clear()
-    STAT_QUIZ.clear()
-    STAT_USERS.clear()
-    EFFECTIVE_CHAT_ID = update.effective_chat
-    user = EFFECTIVE_CHAT_ID
-    context.bot.send_message(chat_id=user.id, reply_markup=InlineKeyboardMarkup(get_buttons(BUTTON_TYPES_GLOBAL)), text='Please choose quiz type')
-
-
-def quiz_difficulty(update: Update, context: CallbackContext):
-    '''
-    This function will initialize the quiz params for difficulty
-    '''
-    user = update.effective_chat or update.effective_user or update.message.from_user
-    buttons = [[InlineKeyboardButton("Easy", callback_data='easy'), InlineKeyboardButton("Medium", callback_data='medium')],
-               [InlineKeyboardButton("Hard", callback_data='hard')]
-                ]
-    context.bot.send_message(chat_id=user.id, reply_markup=InlineKeyboardMarkup(buttons), text='Please choose quiz difficulty')
-
-
-def quiz_limit(update: Update, context: CallbackContext):
-    '''
-    This function will initialize the quiz params for limit
-    '''
-    user = update.effective_chat or update.effective_user or update.message.from_user
-    buttons = [[InlineKeyboardButton("5", callback_data='5'), InlineKeyboardButton("10", callback_data='10')],
-               [InlineKeyboardButton("15", callback_data='15'), InlineKeyboardButton("20", callback_data='20')],
-               ]
-    context.bot.send_message(chat_id=user.id, reply_markup=InlineKeyboardMarkup(buttons), text='Please choose the number of questions')
-
-
-def quiz_selection(update: Update, context: CallbackContext):
-    global CATEGORY_LIST, DIFFICULTY, CATEGORIES, LIMIT
-    user = EFFECTIVE_CHAT_ID
-    query = update.callback_query.data
-    selection_message_type = update.callback_query.message.text
-    if selection_message_type == 'Please choose quiz type':
-        if query == 'done':
-            update.callback_query.answer()
-            CATEGORIES = (',').join(CATEGORY_LIST)
-            context.bot.delete_message(
-                chat_id=user.id,
-                message_id=update.callback_query.message.message_id
-            )
-            return quiz_difficulty(update, context)
-        elif query in CATEGORY_LIST:
-            button = next((button for button in BUTTON_TYPES_GLOBAL if button["callback_data"] == query), None)
-            button['text'] = button['text'].replace('✅ ', '')
-            update.callback_query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(get_buttons(BUTTON_TYPES_GLOBAL)))
-            CATEGORY_LIST.remove(query)
-        else:
-            button = next((button for button in BUTTON_TYPES_GLOBAL if button["callback_data"] == query), None)
-            button['text'] = '✅ ' + button['text']
-            update.callback_query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(get_buttons(BUTTON_TYPES_GLOBAL)))
-            CATEGORY_LIST.append(query)
-        update.callback_query.answer()
-    if selection_message_type == 'Please choose quiz difficulty':
-        update.callback_query.answer()
-        context.bot.delete_message(
-            chat_id=user.id,
-            message_id=update.callback_query.message.message_id
-        )
-        DIFFICULTY = query
-        return quiz_limit(update, context)
-    if selection_message_type == 'Please choose the number of questions':
-        update.callback_query.answer()
-        context.bot.delete_message(
-            chat_id=user.id,
-            message_id=update.callback_query.message.message_id
-        )
-        LIMIT = query
-        get_quiz()
-        return start_quiz(update, context)
-
-
 def get_motivational():
     '''
     This will get a random motivational quote from the API
@@ -249,6 +173,120 @@ def start(update: Update, context: CallbackContext):
         quiz_user.put(user)
 
 
+def quiz_init(update: Update, context: CallbackContext):
+    '''
+    This function will initialize the quiz params
+    '''
+    global EFFECTIVE_CHAT_ID
+    QUIZZES.clear()
+    STAT_QUIZ.clear()
+    STAT_USERS.clear()
+    EFFECTIVE_CHAT_ID = update.effective_chat
+    print("<<<----------")
+    print(EFFECTIVE_CHAT_ID)
+    print("<<<----------")
+    user = EFFECTIVE_CHAT_ID.to_dict()
+    print("<<<----------")
+    print(update.message.from_user)
+    user['key'] = str(user.get('id') or user.get('user_id'))
+    user['data'] = []
+    if user['type'] == 'group':
+        if not quiz_group.get(user['key']):
+            quiz_group.put(user)
+        else:
+            quiz_group.put(user)
+    elif user['type'] == 'private':
+        if not quiz_private.get(user['key']):
+            quiz_private.put(user)
+        else:
+            quiz_private.put(user)
+    else:
+        pass
+    # if type is group, stoe it in quiz group if not store it in private
+    # change the key to the user id or group id
+    #
+    # user = update.message.from_user.to_dict()
+    # user['key'] = str(user.get('id') or user.get('user_id'))
+    # if not quiz_user.get(user['key']):
+    #    quiz_user.put(user)
+
+    context.bot.send_message(chat_id=user.get('id'), reply_markup=InlineKeyboardMarkup(
+        get_buttons(BUTTON_TYPES_GLOBAL)), text='Please choose quiz type')
+
+
+def quiz_difficulty(update: Update, context: CallbackContext):
+    '''
+    This function will initialize the quiz params for difficulty
+    '''
+    user = update.effective_chat or update.effective_user or update.message.from_user
+    buttons = [[InlineKeyboardButton("Easy", callback_data='easy'), InlineKeyboardButton("Medium", callback_data='medium')],
+               [InlineKeyboardButton("Hard", callback_data='hard')]
+               ]
+    context.bot.send_message(chat_id=user.id, reply_markup=InlineKeyboardMarkup(
+        buttons), text='Please choose quiz difficulty')
+
+
+def quiz_limit(update: Update, context: CallbackContext):
+    '''
+    This function will initialize the quiz params for limit
+    '''
+    user = update.effective_chat or update.effective_user or update.message.from_user
+    buttons = [[InlineKeyboardButton("5", callback_data='5'), InlineKeyboardButton("10", callback_data='10')],
+               [InlineKeyboardButton("15", callback_data='15'), InlineKeyboardButton(
+                   "20", callback_data='20')],
+               ]
+    context.bot.send_message(chat_id=user.id, reply_markup=InlineKeyboardMarkup(
+        buttons), text='Please choose the number of questions')
+
+
+def quiz_selection(update: Update, context: CallbackContext):
+    global CATEGORY_LIST, DIFFICULTY, CATEGORIES, LIMIT
+    user = EFFECTIVE_CHAT_ID
+    query = update.callback_query.data
+    selection_message_type = update.callback_query.message.text
+    if selection_message_type == 'Please choose quiz type':
+        if query == 'done':
+            update.callback_query.answer()
+            CATEGORIES = (',').join(CATEGORY_LIST)
+            context.bot.delete_message(
+                chat_id=user.id,
+                message_id=update.callback_query.message.message_id
+            )
+            return quiz_difficulty(update, context)
+        elif query in CATEGORY_LIST:
+            button = next(
+                (button for button in BUTTON_TYPES_GLOBAL if button["callback_data"] == query), None)
+            button['text'] = button['text'].replace('✅ ', '')
+            update.callback_query.edit_message_reply_markup(
+                reply_markup=InlineKeyboardMarkup(get_buttons(BUTTON_TYPES_GLOBAL)))
+            CATEGORY_LIST.remove(query)
+        else:
+            button = next(
+                (button for button in BUTTON_TYPES_GLOBAL if button["callback_data"] == query), None)
+            button['text'] = '✅ ' + button['text']
+            update.callback_query.edit_message_reply_markup(
+                reply_markup=InlineKeyboardMarkup(get_buttons(BUTTON_TYPES_GLOBAL)))
+            CATEGORY_LIST.append(query)
+        update.callback_query.answer()
+    if selection_message_type == 'Please choose quiz difficulty':
+        update.callback_query.answer()
+        context.bot.delete_message(
+            chat_id=user.id,
+            message_id=update.callback_query.message.message_id
+        )
+        DIFFICULTY = query
+        return quiz_limit(update, context)
+    if selection_message_type == 'Please choose the number of questions':
+        update.callback_query.answer()
+        context.bot.delete_message(
+            chat_id=user.id,
+            message_id=update.callback_query.message.message_id
+        )
+        LIMIT = query
+        get_quiz()
+        return start_quiz(update, context)
+
+
 @waiter_wrapper
 def start_quiz(update: Update, context: CallbackContext):
     global CATEGORIES, QUIZZES
@@ -282,6 +320,7 @@ def start_quiz(update: Update, context: CallbackContext):
             open_period=open_time.get(DIFFICULTY, 60),
         )
         options.clear()
+        #quiz_db.delete()
         STAT_QUIZ.append({"poll_id": stat.poll.id, "time": open_time.get(DIFFICULTY, 60), "answer": stat.poll.correct_option_id})
         QUIZZES.pop(0)
         if len(QUIZZES) == 0:
@@ -294,6 +333,13 @@ def continue_quiz(update: Update, context: CallbackContext):
     - UPDATES THE SCORE OF USERS AS WELL THAT HAS BEEN PASSED
       THROUGH THE UPDATE
     '''
+    # if type is group, stoe it in quiz group if not store it in private
+    # change the key to the user id or group id
+    #
+    # user = update.message.from_user.to_dict()
+    # user['key'] = str(user.get('id') or user.get('user_id'))
+    # if not quiz_user.get(user['key']):
+    #    quiz_user.put(user)
     update_user = update.poll_answer
     user = next((user for user in STAT_USERS if user["username"] == update_user.user.username), None)
     poll = [poll for poll in STAT_QUIZ if poll["poll_id"] == update_user.poll_id][0]
@@ -439,5 +485,5 @@ def send_motivation():
     return {"message": "ok"}
 
 
-if __name__ == '__main__':
-    main()
+#if __name__ == '__main__':
+#    main()
